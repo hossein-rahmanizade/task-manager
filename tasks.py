@@ -30,21 +30,21 @@ def file_exist(path):
     return os.path.exists(path)
 
 
-def parse_task_input(user_task):
+def parse_task_input(user_task: str) -> dict | None:
     """Change user's input for add_task_to_file() by parsing and adding new items to it."""
     date_added = datetime.now().strftime("%Y-%m-%d %H:%M")    
     user_task_split = re.split(r'\s*,\s*', user_task)
     if len(user_task_split) != 3:
         print("X You have to enter all three task requirement")
-        return False
+        return None 
     user_task_keys = ["title", "priority", "due"]
     result = dict(zip(user_task_keys, user_task_split))
     if not result['title'] or not result['title'].strip():
         print("X Title cannot be empty")
-        return False
+        return None
     if result['priority'] not in ["1","2","3","4","5"]:
         print("X You have to enter the prioriy in a numerical format (1-5)")
-        return False
+        return None
     try:
         datetime.strptime(result["due"], "%Y-%m-%d %H:%M")
     except ValueError:
@@ -52,7 +52,7 @@ def parse_task_input(user_task):
             datetime.strptime(result["due"], "%Y-%m-%d")
         except ValueError:
             print("X Due date must be 'YYYY-MM-DD HH:MM' or 'YYYY-MM-DD'")
-            return False
+            return None
     result["date_added"] = date_added
     result["done"] = False
     return result
