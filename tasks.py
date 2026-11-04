@@ -1,16 +1,11 @@
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 import os
 import re
 import sys
 
 
-now = datetime.now()
-date_added = now.strftime("%Y-%m-%d %H:%M")
-today = now.strftime("%Y-%m-%d")
-tomorrow = now + timedelta(days=1)
-tomorrow_str = tomorrow.strftime("%Y-%m-%d")
 json_path = "/tmp/tasks.json"
 cmd_parser = argparse.ArgumentParser()
 cmd_parser.add_argument("-a", "--add", help= "Add task in this format with dqoutes: \"title, priority, due\".")
@@ -34,19 +29,10 @@ def task_options_prints(): # later I need to add edit task option to it too.
 def file_exist(path):
     return os.path.exists(path)
 
-def validate_due_date(due_string):
-    parsed_due = due_string.split(" ")
-    if not due_string or not due_string.strip():
-        due_string = "today 23:59"
-    elif parsed_due[0] == today:
-        due_string = "today" + " " + parsed_due[1]
-    elif parsed_due[0] == tomorrow_str:
-        due_string = "tomorrow" + " " + parsed_due[1]
-    return due_string 
-
 
 def parse_task_input(user_task):
     """Change user's input for add_task_to_file() by parsing and adding new items to it."""
+    date_added = datetime.now().strftime("%Y-%m-%d %H:%M")    
     user_task_split = re.split(r'\s*,\s*', user_task)
     if len(user_task_split) != 3:
         print("X You have to enter all three task requirement")
@@ -59,7 +45,14 @@ def parse_task_input(user_task):
     if result['priority'] not in ["1","2","3","4","5"]:
         print("X You have to enter the prioriy in a numerical format (1-5)")
         return False
-    result["due"] = validate_due_date(result.get("due", ""))
+    try:
+        datetime.strptime(result["due"], "%Y-%m-%d %H:%M")
+    except ValueError:
+        try:
+            datetime.strptime(result["due"], "%Y-%m-%d")
+        except ValueError:
+            print("X Due date must be 'YYYY-MM-DD HH:MM' or 'YYYY-MM-DD'")
+            return False
     result["date_added"] = date_added
     result["done"] = False
     return result
