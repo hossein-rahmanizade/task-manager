@@ -34,7 +34,7 @@ def task_options_prints(): # later I need to add edit task option to it too.
 def file_exist(path):
     return os.path.exists(path)
 
-def Validate_due_date(due_string):
+def validate_due_date(due_string):
     parsed_due = due_string.split(" ")
     if not due_string or not due_string.strip():
         due_string = "today 23:59"
@@ -59,7 +59,7 @@ def parse_task_input(user_task):
     if result['priority'] not in ["1","2","3","4","5"]:
         print("X You have to enter the prioriy in a numerical format (1-5)")
         return False
-    result["due"] = Validate_due_date(result.get("due", ""))
+    result["due"] = validate_due_date(result.get("due", ""))
     result["date_added"] = date_added
     result["done"] = False
     return result
@@ -100,16 +100,16 @@ def delete_task(title):
         with open(json_path, 'r') as file:
             data = json.load(file)
             print()
+            found = False
             for i in range(len(data)-1, -1, -1):
                 if data[i]["title"] == title:
                     data.pop(i)
-
-        with open(json_path, 'w') as file:
-            json.dump(data, file, indent=4, sort_keys=True)        
-        print(f"You're task '{title}' been successfully deleted.")
-        
-    else:
-        print("There's no task here to delete.")
+                    found = True
+                    with open(json_path, 'w') as file:
+                        json.dump(data, file, indent=4, sort_keys=True)        
+                        print(f"You're task '{title}' been successfully deleted.")
+            if not found:
+                print("There's no task here to delete.")
 
 
 def view_task(): # later I add parameters to filter the output like show_all=True
@@ -120,9 +120,9 @@ def view_task(): # later I add parameters to filter the output like show_all=Tru
         print()
         for i in range(len(data)):
             if not data[i]["done"]:
-                print(f"[ ] {data[i]["id"]}. {data[i]["title"]} (due: {data[i]["due"]}) (priority: {data[i]["priority"]})")
+                print(f'[ ] {data[i]["id"]}. {data[i]["title"]} (due: {data[i]["due"]}) (priority: {data[i]["priority"]})')
             else:
-                print(f"[x] {data[i]["id"]}. {data[i]["title"]} (due: {data[i]["due"]}) (priority: {data[i]["priority"]})")
+                print(f'[x] {data[i]["id"]}. {data[i]["title"]} (due: {data[i]["due"]}) (priority: {data[i]["priority"]})')
     else:
         print("There's no task here to view.")
 
