@@ -31,7 +31,7 @@ def file_exist(path):
 
 
 def parse_task_input(user_task: str) -> dict | None:
-    """Change user's input for add_task_to_file() by parsing and adding new items to it."""
+    """Takes raw input string, returns parsed dict with keys {title, priority, due, date_added, done} or None on validation failure, with the error message printed."""
     date_added = datetime.now().strftime("%Y-%m-%d %H:%M")    
     user_task_split = re.split(r'\s*,\s*', user_task)
     if len(user_task_split) != 3:
@@ -58,34 +58,37 @@ def parse_task_input(user_task: str) -> dict | None:
     return result
 
 
-def add_task_to_file(task_input):
-    """Check if the task.json file exist, and add the dictionary result of the parse_task_input()
-       to the file.if file didn't exist, it make it first and then, add user's parsed input to the file."""
-    if not file_exist(json_path):
-        with open(json_path, 'w') as file:
-            data = parse_task_input(task_input)
-            data["id"] = 1
-            json.dump([data], file, indent=4, sort_keys=True)
+def add_task_to_file(task: dict) -> int:
+    """Persist a parsed task dict to the JSON store and return its assigned id.
 
+    Args:
+        task: Parsed task dict from parse_task_input. Must not have an 'id'
+            key set; one will be assigned by this function based on existing
+            tasks in the store.
+
+    Returns:
+        The integer id assigned to the newly stored task.
+
+    Side effects:
+        Writes to json_path. Creates the file if it does not exist.
+    """
+    if not file_exist(json_path):
+        tasks = []
     else:
         if os.path.getsize(json_path) > 0:
             with open(json_path, 'r') as file:
-                data = json.load(file)
+                tasks = json.load(file)
         else:
-            data = []
+            tasks = []
             
-        next_id = max((item['id'] for item in data), default=0) + 1
-
-        new_entry = parse_task_input(task_input)
-        new_entry["id"] = next_id
-
-        data.append(new_entry)
+    next_id = max((t['id'] for t in tasks), default=0) + 1
+    task["id"] = next_id
+    tasks.append(task)
             
-        with open(json_path, 'w') as file:
-            json.dump(data, file, indent=4, sort_keys=True)
+    with open(json_path, 'w') as file:
+        json.dump(tasks, file, indent=4, sort_keys=True)
     
-    print("\nYour task been added.")
-
+    return next_id 
 
 def delete_task(title):
     """Get an argument from user's input and delete a task based on it."""
@@ -147,12 +150,13 @@ def interactive_mode():
         choice = input("Choose option 1-5: ")
 
         if choice == "1":
-            task_input = input("Enter title, priority, due: ")
-            parsed = parse_task_input(task_input)
-            if parsed:
-                add_task_to_file(task_input)
-            else:
+            raw = input("Enter title, priority, due: ") # make it more detailed, it's not informative enough
+            parsed = parse_task_input(raw)
+            if parsed is None:
                 print("Invalid format. Use: title, priority, due")
+                continue
+            new_id = add_task_to_file(parsed)
+            print(f'[+] Added task #{new_id}: "{parsed["title"]}" (priority: {parsed["priority"]}, due: {parsed["due"]})')
         elif choice == "2":
             title = input("Enter task name to delete: ")
             delete_task(title)
@@ -171,17 +175,20 @@ def interactive_mode():
 def main():
     
     args = cmd_parser.parse_args()
-    if args.add or args.view or args.delete or args.markdown:
-        if args.add:
-            add_task_to_file(args.add)
-        if args.view:
-            view_task()
-        if args.delete:
-            delete_task(args.delete)
-        if args.markdown:
-            mark_down_task(args.markdown)
+    if args.add:
+        parsed = parse_task_input(args.add)
+        if parsed is None:
+            sys.exit(1)
+        new_id = add_task_to_file(parsed)
+        print(f'[+] Added task #{new_id}: "{parsed["title"]}" (priority: {parsed["priority"]}, due: {parsed["due"]})')
+    if args.view:
+        view_task()
+    if args.delete:
+        delete_task(args.delete)
+    if args.markdown:
+        mark_down_task(args.markdown)
 
-    else:
+    if not any([args.add, args.view, args.delete, args.markdown]):
         interactive_mode()
 
 
