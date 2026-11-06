@@ -10,10 +10,10 @@ json_path = "/tmp/tasks.json"
 cmd_parser = argparse.ArgumentParser()
 cmd_parser.add_argument("-a", "--add", help= "Add task in this format with dqoutes: \"title, priority, due\".")
 cmd_parser.add_argument("-v", "--view", action = "store_true", help = "View Tasks")
-cmd_parser.add_argument("-d", "--delete", help= "Enter the title of the task in dqoutes, view tasks first for checking you tasks first.")
-cmd_parser.add_argument("-m", "--markdown", help= "Enter the title of the task in dqoutes, view tasks first for checking you tasks first.")
+cmd_parser.add_argument("-d", "--delete", type=int, help= "Enter task's id, view tasks first for checking you tasks first.")
+cmd_parser.add_argument("-x", "--complete", type=int, help= "Enter task's id, view tasks first for checking you tasks first.")
 
-def task_options_prints(): # later I need to add edit task option to it too.
+def task_options_prints(): 
     """Show program's option to the user"""
     print("\n" + "="*32)
     print("        CLI TASK MANAGER")
@@ -90,22 +90,50 @@ def add_task_to_file(task: dict) -> int:
     
     return next_id 
 
-def delete_task(title):
-    """Get an argument from user's input and delete a task based on it."""
-    if file_exist(json_path):
-        with open(json_path, 'r') as file:
-            data = json.load(file)
-            print()
-            found = False
-            for i in range(len(data)-1, -1, -1):
-                if data[i]["title"] == title:
-                    data.pop(i)
-                    found = True
-                    with open(json_path, 'w') as file:
-                        json.dump(data, file, indent=4, sort_keys=True)        
-                        print(f"You're task '{title}' been successfully deleted.")
-            if not found:
-                print("There's no task here to delete.")
+def delete_task(task_id: int) -> dict | None:
+    """Delete the task with the given id. Return the deleted task dict, or None if not found."""
+    if not file_exist(json_path):
+        return None
+
+    with open(json_path, 'r') as file:
+        tasks = json.load(file)
+
+    deleted = None
+    for i in range(len(tasks) - 1, -1, -1):
+        if tasks[i]["id"] == task_id:
+            deleted = tasks.pop(i)
+            break
+
+    if deleted is None:
+        return None
+
+    with open(json_path, 'w') as file:
+        json.dump(tasks, file, indent=4, sort_keys=True)
+
+    return deleted
+
+def complete_task(task_id: int) -> dict | None:
+    """Mark the task with the given id as done. Return the updated task dict, or None if not found."""
+    if not file_exist(json_path):
+        return None
+
+    with open(json_path, 'r') as file:
+        tasks = json.load(file)
+
+    completed = None
+    for task in tasks:
+        if task["id"] == task_id:
+            task["done"] = True
+            completed = task
+            break
+
+    if completed is None:
+        return None
+
+    with open(json_path, 'w') as file:
+        json.dump(tasks, file, indent=4, sort_keys=True)
+
+    return completed
 
 
 def view_task(): # later I add parameters to filter the output like show_all=True
@@ -116,32 +144,11 @@ def view_task(): # later I add parameters to filter the output like show_all=Tru
         print()
         for i in range(len(data)):
             if not data[i]["done"]:
-                print(f'[ ] {data[i]["id"]}. {data[i]["title"]} (due: {data[i]["due"]}) (priority: {data[i]["priority"]})')
+                print(f'[ ] #{data[i]["id"]}. {data[i]["title"]} (due: {data[i]["due"]}) (priority: {data[i]["priority"]})')
             else:
-                print(f'[x] {data[i]["id"]}. {data[i]["title"]} (due: {data[i]["due"]}) (priority: {data[i]["priority"]})')
+                print(f'[x] #{data[i]["id"]}. {data[i]["title"]} (due: {data[i]["due"]}) (priority: {data[i]["priority"]})')
     else:
         print("There's no task here to view.")
-
-
-def mark_down_task(title):
-    """Get a name from user input as argument and mark it down by changing the done item into True."""
-    if file_exist(json_path):
-        with open(json_path, 'r') as file:
-            data = json.load(file)
-            found = False
-            for i in range(len(data)):
-                if data[i]["title"] == title:
-                    data[i]["done"] = True
-                    found = True
-            if not found:
-                    print(f"There's no task with '{title}' title.")
-        if found:
-            with open(json_path, 'w') as file:
-                json.dump(data, file, indent=4, sort_keys=True)        
-            print(f"You're task '{title}' been successfully completed.")
-
-    else:
-        print("There's no task here to complete.")
 
 
 def interactive_mode():
@@ -158,13 +165,33 @@ def interactive_mode():
             new_id = add_task_to_file(parsed)
             print(f'[+] Added task #{new_id}: "{parsed["title"]}" (priority: {parsed["priority"]}, due: {parsed["due"]})')
         elif choice == "2":
-            title = input("Enter task name to delete: ")
-            delete_task(title)
+            raw = input("Enter task's id to delete: ")
+            try:
+                task_id = int(raw)
+            except ValueError:
+                print("Invalid task id: must be a number")
+                continue
+            deleted= delete_task(task_id)
+            if deleted:
+                print(f"[-]Deleted task #{task_id}: {deleted['title']}")
+            if not deleted:
+                print("no task matched")
+
         elif choice == "3":
             view_task()
         elif choice == "4":
-            name = input("Enter task name to complete: ") # or id number
-            mark_down_task(name)
+            raw = input("Enter task's id to complete: ")
+            try:
+                task_id = int(raw)
+            except ValueError:
+                print("Invalid task id: must be a number")
+                continue
+            completed= complete_task(task_id)
+            if completed:
+                print(f"[x] Completed task #{task_id}: {completed['title']}")
+            if not completed:
+                print("no task matched")
+
         elif choice == "5":
             print("Goodbye")
             break
@@ -184,11 +211,20 @@ def main():
     if args.view:
         view_task()
     if args.delete:
-        delete_task(args.delete)
-    if args.markdown:
-        mark_down_task(args.markdown)
+        deleted = delete_task(args.delete)
+        if deleted:
+            print(f"[-] Deleted task #{args.delete}: {deleted['title']}")
+        else:
+            print(f"No task matched id #{args.delete}")
+    if args.complete:
+        completed = complete_task(args.complete)
+        if completed:
+            print(f"[x] Completed task #{args.complete}: {completed['title']}")
+        else:
+            print(f"No task matched id #{args.complete}")
 
-    if not any([args.add, args.view, args.delete, args.markdown]):
+
+    if not any([args.add, args.view, args.delete, args.complete]):
         interactive_mode()
 
 
