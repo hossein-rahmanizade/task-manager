@@ -38,10 +38,6 @@ def task_options_prints():
 {CYAN}{'=' * 32}{RESET}""")
 
 
-def file_exist(path):
-    return os.path.exists(path)
-
-
 def parse_task_input(user_task: str) -> dict | None:
     """Parse a raw 'title, priority, due' string into a task dict.
 
@@ -88,7 +84,7 @@ def add_task_to_file(task: dict) -> int:
     Side effects:
         Writes to json_path. Creates the file if it does not exist.
     """
-    if not file_exist(json_path):
+    if not os.path.exists(json_path):
         tasks = []
     else:
         if os.path.getsize(json_path) > 0:
@@ -109,7 +105,7 @@ def add_task_to_file(task: dict) -> int:
 
 def delete_task(task_id: int) -> dict | None:
     """Delete the task with the given id. Return the deleted task dict, or None if not found."""
-    if not file_exist(json_path):
+    if not os.path.exists(json_path):
         return None
 
     with open(json_path, 'r') as file:
@@ -132,7 +128,7 @@ def delete_task(task_id: int) -> dict | None:
 
 def complete_task(task_id: int) -> dict | None:
     """Mark the task with the given id as done. Return the updated task dict, or None if not found."""
-    if not file_exist(json_path):
+    if not os.path.exists(json_path):
         return None
 
     with open(json_path, 'r') as file:
@@ -156,7 +152,7 @@ def complete_task(task_id: int) -> dict | None:
 
 def view_task():
     """Print all tasks currently in the store."""
-    if not file_exist(json_path):
+    if not os.path.exists(json_path):
         print(f"{YELLOW}There are no tasks to view.{RESET}")
         return
 
@@ -173,6 +169,7 @@ def view_task():
 
 
 def interactive_mode():
+    """Run the interactive menu loop until the user chooses to exit."""
     while True:
         task_options_prints()
         choice = input("Choose option 1-5: ")
@@ -219,8 +216,13 @@ def interactive_mode():
 
 
 def main():
+    """Parse CLI args and dispatch to the appropriate handler.
+
+    With no flags, enters interactive mode. Otherwise executes the requested
+    operation(s) and exits.
+    """
     args = cmd_parser.parse_args()
-    if args.add:
+    if args.add is not None:
         parsed = parse_task_input(args.add)
         if parsed is None:
             sys.exit(1)
@@ -228,22 +230,21 @@ def main():
         print(f"{GREEN}[+]{RESET} Added task #{new_id}: \"{parsed['title']}\" (priority: {parsed['priority']}, due: {parsed['due']})")
     if args.view:
         view_task()
-    if args.delete:
+    if args.delete is not None:
         deleted = delete_task(args.delete)
         if deleted:
             print(f"{GREEN}[-]{RESET} Deleted task #{args.delete}: {deleted['title']}")
         else:
             print(f"{YELLOW}No task matched id #{args.delete}{RESET}")
-    if args.complete:
+    if args.complete is not None:
         completed = complete_task(args.complete)
         if completed:
             print(f"{GREEN}[x]{RESET} Completed task #{args.complete}: {completed['title']}")
         else:
             print(f"{YELLOW}No task matched id #{args.complete}{RESET}")
 
-    if not any([args.add, args.view, args.delete, args.complete]):
+    if args.add is None and not args.view and args.delete is None and args.complete is None:
         interactive_mode()
-
 
 if __name__ == "__main__":
     main()
