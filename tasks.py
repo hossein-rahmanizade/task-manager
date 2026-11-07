@@ -16,6 +16,12 @@ GREEN = "\033[32m"
 YELLOW = "\033[33m"
 CYAN = "\033[36m"
 
+
+# Tests can set this to a temp file path to avoid touching the real DB.
+# Production code leaves it as None, and get_db_path() uses the real XDG path.
+_DB_PATH_OVERRIDE: str | None = None
+
+
 cmd_parser = argparse.ArgumentParser()
 cmd_parser.add_argument("-a", "--add", help="Add task: \"title, priority, due\".")
 cmd_parser.add_argument("-v", "--view", action="store_true", help="View tasks")
@@ -71,7 +77,12 @@ def parse_task_input(user_task: str) -> dict | None:
 
 
 def get_db_path() -> str:
-    """Return the absolute path to the SQLite database file."""
+    """Return the absolute path to the SQLite database file.
+
+    Returns _DB_PATH_OVERRIDE if set (used by tests); otherwise the XDG path.
+    """
+    if _DB_PATH_OVERRIDE is not None:
+        return _DB_PATH_OVERRIDE
     return os.path.expanduser("~/.local/share/taskmanager/tasks.db")
 
 
