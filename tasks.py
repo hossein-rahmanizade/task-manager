@@ -1,9 +1,9 @@
 import argparse
 from datetime import datetime
-import json
 import os
 import re
 import sys
+import sqlite3
 
 
 # ANSI escape codes for terminal output. Terminals interpret these as styling
@@ -16,7 +16,6 @@ GREEN = "\033[32m"
 YELLOW = "\033[33m"
 CYAN = "\033[36m"
 
-json_path = "/tmp/tasks.json"
 cmd_parser = argparse.ArgumentParser()
 cmd_parser.add_argument("-a", "--add", help="Add task: \"title, priority, due\".")
 cmd_parser.add_argument("-v", "--view", action="store_true", help="View tasks")
@@ -41,10 +40,10 @@ def task_options_prints():
 def parse_task_input(user_task: str) -> dict | None:
     """Parse a raw 'title, priority, due' string into a task dict.
 
-    Returns a dict with keys {title, priority, due, date_added, done} on success,
+    Returns a dict with keys {title, priority, due, created_at, done} on success,
     or None on validation failure (with the error message printed).
     """
-    date_added = datetime.now().strftime("%Y-%m-%d %H:%M")
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     user_task_split = re.split(r'\s*,\s*', user_task)
     if len(user_task_split) != 3:
         print(f"{RED}X You have to enter all three task requirements{RESET}")
@@ -57,6 +56,7 @@ def parse_task_input(user_task: str) -> dict | None:
     if result['priority'] not in ["1", "2", "3", "4", "5"]:
         print(f"{RED}X Priority must be a number 1-5{RESET}")
         return None
+    result["priority"] = int(result["priority"])
     try:
         datetime.strptime(result["due"], "%Y-%m-%d %H:%M")
     except ValueError:
@@ -65,100 +65,95 @@ def parse_task_input(user_task: str) -> dict | None:
         except ValueError:
             print(f"{RED}X Due date must be 'YYYY-MM-DD HH:MM' or 'YYYY-MM-DD'{RESET}")
             return None
-    result["date_added"] = date_added
-    result["done"] = False
+    result["created_at"] = created_at
+    result["done"] = 0
     return result
 
 
-def add_task_to_file(task: dict) -> int:
-    """Persist a parsed task dict to the JSON store and return its assigned id.
+def get_db_path() -> str:
+    """Return the absolute path to the SQLite database file."""
+    return os.path.expanduser("~/.local/share/taskmanager/tasks.db")
+
+
+def init_db() -> None:
+    """Create the database directory and tasks table if they don't exist.
+
+    Safe to call multiple times; uses CREATE TABLE IF NOT EXISTS.
+    """
+    db_path = get_db_path()
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                priority INTEGER NOT NULL CHECK (priority BETWEEN 1 AND 5),
+                due TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                done INTEGER NOT NULL DEFAULT 0 CHECK (done IN (0, 1))
+            )
+        """)
+
+
+def add_task(task: dict) -> int:
+    """Insert a parsed task dict into the database and return its assigned id.
 
     Args:
-        task: Parsed task dict from parse_task_input. Must not have an 'id'
-            key set; one will be assigned by this function based on existing
-            tasks in the store.
+        task: Dict with keys {title, priority (int), due, created_at, done}.
+            Must not include 'id'; one will be assigned by AUTOINCREMENT.
 
     Returns:
-        The integer id assigned to the newly stored task.
-
-    Side effects:
-        Writes to json_path. Creates the file if it does not exist.
+        The integer id assigned to the newly inserted task.
     """
-    if not os.path.exists(json_path):
-        tasks = []
-    else:
-        if os.path.getsize(json_path) > 0:
-            with open(json_path, 'r') as file:
-                tasks = json.load(file)
-        else:
-            tasks = []
-
-    next_id = max((t['id'] for t in tasks), default=0) + 1
-    task["id"] = next_id
-    tasks.append(task)
-
-    with open(json_path, 'w') as file:
-        json.dump(tasks, file, indent=4, sort_keys=True)
-
-    return next_id
+    init_db()
+    with sqlite3.connect(get_db_path()) as conn:
+        cur = conn.execute(
+            "INSERT INTO tasks (title, priority, due, created_at, done) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (task["title"], task["priority"], task["due"], task["created_at"], task["done"])
+        )
+        return cur.lastrowid
 
 
 def delete_task(task_id: int) -> dict | None:
     """Delete the task with the given id. Return the deleted task dict, or None if not found."""
-    if not os.path.exists(json_path):
-        return None
-
-    with open(json_path, 'r') as file:
-        tasks = json.load(file)
-
-    deleted = None
-    for i in range(len(tasks) - 1, -1, -1):
-        if tasks[i]["id"] == task_id:
-            deleted = tasks.pop(i)
-            break
-
-    if deleted is None:
-        return None
-
-    with open(json_path, 'w') as file:
-        json.dump(tasks, file, indent=4, sort_keys=True)
-
-    return deleted
+    init_db()
+    with sqlite3.connect(get_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT id, title, priority, due, created_at, done FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            return None
+        conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        return dict(row)
 
 
 def complete_task(task_id: int) -> dict | None:
     """Mark the task with the given id as done. Return the updated task dict, or None if not found."""
-    if not os.path.exists(json_path):
-        return None
-
-    with open(json_path, 'r') as file:
-        tasks = json.load(file)
-
-    completed = None
-    for task in tasks:
-        if task["id"] == task_id:
-            task["done"] = True
-            completed = task
-            break
-
-    if completed is None:
-        return None
-
-    with open(json_path, 'w') as file:
-        json.dump(tasks, file, indent=4, sort_keys=True)
-
-    return completed
+    init_db()
+    with sqlite3.connect(get_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT id, title, priority, due, created_at, done FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            return None
+        conn.execute("UPDATE tasks SET done = 1 WHERE id = ?", (task_id,))
+        result = dict(row)
+        result["done"] = 1
+        return result
 
 
-def view_task():
-    """Print all tasks currently in the store."""
-    if not os.path.exists(json_path):
+def list_tasks() -> list[dict]:
+    """Return all tasks in the database, ordered by id."""
+    init_db()
+    with sqlite3.connect(get_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT id, title, priority, due, created_at, done FROM tasks ORDER BY id").fetchall()
+        return [dict(row) for row in rows]
+    
+def _print_tasks(tasks: list[dict]) -> None:
+    """Render a list of task dicts to stdout. Empty list prints a 'no tasks' notice."""
+    if not tasks:
         print(f"{YELLOW}There are no tasks to view.{RESET}")
         return
-
-    with open(json_path, 'r') as file:
-        tasks = json.load(file)
-
     print()
     for task in tasks:
         if task["done"]:
@@ -180,7 +175,7 @@ def interactive_mode():
             if parsed is None:
                 print(f"{YELLOW}Invalid format. Use: title, priority, due{RESET}")
                 continue
-            new_id = add_task_to_file(parsed)
+            new_id = add_task(parsed)
             print(f"{GREEN}[+]{RESET} Added task #{new_id}: \"{parsed['title']}\" (priority: {parsed['priority']}, due: {parsed['due']})")
         elif choice == "2":
             raw = input("Enter task's id to delete: ")
@@ -195,7 +190,7 @@ def interactive_mode():
             else:
                 print(f"{YELLOW}No task matched id #{task_id}{RESET}")
         elif choice == "3":
-            view_task()
+            _print_tasks(list_tasks())
         elif choice == "4":
             raw = input("Enter task's id to complete: ")
             try:
@@ -226,10 +221,10 @@ def main():
         parsed = parse_task_input(args.add)
         if parsed is None:
             sys.exit(1)
-        new_id = add_task_to_file(parsed)
+        new_id = add_task(parsed)
         print(f"{GREEN}[+]{RESET} Added task #{new_id}: \"{parsed['title']}\" (priority: {parsed['priority']}, due: {parsed['due']})")
     if args.view:
-        view_task()
+        _print_tasks(list_tasks())
     if args.delete is not None:
         deleted = delete_task(args.delete)
         if deleted:
